@@ -15,20 +15,31 @@ void text(ui_box_t *b, char *out){
 }
 
 void draw(ui_box_t *b, char *out){
-  int x, y, len = 0, max = MAXCACHESIZE;
+  int x, y, len = 0;
+  const int max_len = MAXCACHESIZE - 100; /* Leave safety buffer */
 
-  sprintf(out, "");
-  for(y=0;y<b->h;y++){
-    for(x=0;x<b->w;x++){
+  out[0] = '\0';
+  for(y=0; y<b->h && len < max_len; y++){
+    for(x=0; x<b->w && len < max_len; x++){
       /* Truecolor string to generate gradient */
-      len += sprintf(out + len, "\x1b[48;2;%i;%i;%im ", (int)round(255 * ((double)x / (double)b->w)), (int)round(255 * ((double)y / (double)b->h)), (int)round(255 * ((double)x * (double)y / ((double)b->w * (double)b->h))));
-
-      if(len + 1024 > max){
-        out = realloc(out, (max *= 2));
-      }
+      int written = sprintf(out + len, "\x1b[48;2;%i;%i;%im ", 
+        (int)round(255 * ((double)x / (double)b->w)), 
+        (int)round(255 * ((double)y / (double)b->h)), 
+        (int)round(255 * ((double)x * (double)y / ((double)b->w * (double)b->h))));
+      
+      if (len + written >= max_len) break;
+      len += written;
     }
-    strcat(out + len, "\x1b[0m\n");
+    if (len + 10 < max_len) { /* Check space for reset sequence */
+      strcpy(out + len, "\x1b[0m\n");
+      len += 5; /* Length of "\x1b[0m\n" */
+    } else {
+      break; /* No more space */
+    }
   }
+  
+  /* Ensure null termination */
+  out[len] = '\0';
 }
 
 /* Function that runs on box click */
@@ -52,10 +63,11 @@ int main(){
   /* Initialize UI data structures */
   ui_new(0, &u);
 
-  /* Add new UI elements to screen 0 */
+  /* Add new UI elements to screen 0 - limit size to prevent buffer overflow */
   ui_add(
     1, 1,
-    u.ws.ws_col, u.ws.ws_row,
+    (u.ws.ws_col > 80) ? 80 : u.ws.ws_col, 
+    (u.ws.ws_row > 24) ? 24 : u.ws.ws_row,
     0,
     NULL, 0,
     draw,
@@ -85,5 +97,7 @@ int main(){
     ui_update(&u);
   }
 
+  /* This should never be reached due to ui_key("q", stop, &u), but just in case */
+  ui_free(&u);
   return 0;
 }

@@ -1,0 +1,6 @@
+# Ignore Claude-related configuration and local files
+.claude/
+!*.claudeignore
+.claudeignore
+.claude-settings.json
+.claude-cache/

@@ -20,7 +20,7 @@ void draw(ui_box_t *b, char *out){
   int x, y;
   char tmp[256];
 
-  sprintf(out, "");
+  out[0] = '\0';
   for(y=0;y<b->h;y++){
     for(x=0;x<b->w;x++){
       /* Truecolor string to generate gradient */

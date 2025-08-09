@@ -7,10 +7,16 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include "tuibox_win.h"
+#else
+#include <unistd.h>
 #include <termios.h>
 #include <sys/ioctl.h>
+#include <fcntl.h>
+#endif
 
 /** BEGIN vec.h **/
 
@@ -390,7 +396,10 @@ typedef struct ui_t {
   ui_box_t *click;
   int mouse, screen,
       scroll, canscroll,
-      id, force;
+      id, force, nonblocking;
+#ifndef _WIN32
+  int original_stdin_flags;  /* Store original fcntl flags for Unix */
+#endif
 } ui_t;
 
 /* =========================== */
@@ -403,6 +412,10 @@ typedef struct ui_t {
  *   for mouse support.
  */
 void ui_new(int s, ui_t *u){
+#ifdef _WIN32
+  ioctl(STDOUT_FILENO, TIOCGWINSZ, &(u->ws));
+  tcgetattr(STDIN_FILENO, &(u->tio));
+#else
   struct termios raw;
 
   ioctl(STDOUT_FILENO, TIOCGWINSZ, &(u->ws));
@@ -411,6 +424,10 @@ void ui_new(int s, ui_t *u){
   raw = u->tio;
   raw.c_lflag &= ~(ECHO | ICANON);
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+  
+  /* Store original stdin flags for non-blocking support */
+  u->original_stdin_flags = fcntl(STDIN_FILENO, F_GETFL);
+#endif
 
   vec_init(&(u->b));
   vec_init(&(u->e));
@@ -426,6 +443,7 @@ void ui_new(int s, ui_t *u){
   u->canscroll = 1;
   
   u->id = 0;
+  u->nonblocking = 0;
 
   u->force = 0;
 }
@@ -444,6 +462,11 @@ void ui_free(ui_t *u){
   printf("\x1b[0m\x1b[2J\x1b[?1049l\x1b[?1003l\x1b[?1015l\x1b[?1006l\x1b[?25h");
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &(u->tio));
 
+#ifndef _WIN32
+  /* Restore original stdin flags on Unix */
+  fcntl(STDIN_FILENO, F_SETFL, u->original_stdin_flags);
+#endif
+
   vec_foreach(&(u->b), val, i){
     free(val->cache);
     free(val);
@@ -456,8 +479,8 @@ void ui_free(ui_t *u){
   vec_deinit(&(u->e));
 
   term = getenv("TERM");
-  if(strncmp(term, "screen", 6) == 0 ||
-     strncmp(term, "tmux", 4) == 0){
+  if(term && (strncmp(term, "screen", 6) == 0 ||
+     strncmp(term, "tmux", 4) == 0)){
     printf("Note: Terminal multiplexer detected.\n  For best performance (i.e. reduced flickering), running natively inside\n  a GPU-accelerated terminal such as alacritty or kitty is recommended.\n");
   }
 }
@@ -611,13 +634,15 @@ void _ui_update(char *c, int n, ui_t *u){
   ui_box_t *tmp;
   ui_evt_t *evt;
   int ind, x, y;
-  char cpy[n], *tok;
+  char cpy[256], *tok;
 
   if(n >= 4 &&
      c[0] == '\x1b' &&
      c[1] == '[' &&
      c[2] == '<'){
-    strncpy(cpy, c, n);
+    int copy_len = (n < 256) ? n : 255;
+    strncpy(cpy, c, copy_len);
+    cpy[copy_len] = '\0';
     tok = strtok(cpy+3, ";");
     
     switch(tok[0]){
@@ -650,6 +675,29 @@ void _ui_update(char *c, int n, ui_t *u){
 }
 
 /*
+ * Set non-blocking input mode
+ *   Affects behavior of read() calls:
+ *   nonblocking=0: read() blocks until input available (default)
+ *   nonblocking=1: read() returns immediately if no input
+ */
+void ui_set_nonblocking(ui_t *u, int nonblocking) {
+  u->nonblocking = nonblocking;
+#ifdef _WIN32
+  win_set_nonblocking_mode(nonblocking);
+#else
+  /* Unix implementation using fcntl */
+  int flags = fcntl(STDIN_FILENO, F_GETFL);
+  if (nonblocking) {
+    /* Enable non-blocking mode */
+    fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+  } else {
+    /* Disable non-blocking mode */
+    fcntl(STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
+  }
+#endif
+}
+
+/*
  * HELPERS
  */
 void _ui_text(ui_box_t *b, char *out){
@@ -664,7 +712,7 @@ int ui_text(
 ){
   return ui_add(
     x, y,
-    strlen(str), 1,
+    (int)strlen(str), 1,
     screen,
     NULL, 0,
     _ui_text,

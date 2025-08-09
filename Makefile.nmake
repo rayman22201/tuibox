@@ -1,0 +1,48 @@
+# Makefile for nmake (Microsoft Visual C++)
+# Usage: nmake /f Makefile.nmake
+
+CC = cl
+CFLAGS = /O2 /W3 /D_CRT_SECURE_NO_WARNINGS /D_WIN32
+DEBUGFLAGS = /Od /Zi /W3 /D_CRT_SECURE_NO_WARNINGS /D_WIN32
+
+all: demos\demo_basic.exe demos\demo_bounce.exe demos\demo_drag.exe
+
+demos\demo_basic.exe: demos\demo_basic.c tuibox.h tuibox_win.h
+	$(CC) $(CFLAGS) /Fe$@ demos\demo_basic.c
+
+demos\demo_bounce.exe: demos\demo_bounce.c tuibox.h tuibox_win.h
+	$(CC) $(CFLAGS) /Fe$@ demos\demo_bounce.c
+
+demos\demo_drag.exe: demos\demo_drag.c tuibox.h tuibox_win.h
+	$(CC) $(CFLAGS) /Fe$@ demos\demo_drag.c
+
+debug: demos\debug_basic.exe demos\debug_bounce.exe demos\debug_drag.exe
+
+demos\debug_basic.exe: demos\demo_basic.c tuibox.h tuibox_win.h
+	$(CC) $(DEBUGFLAGS) /Fe$@ demos\demo_basic.c
+
+demos\debug_bounce.exe: demos\demo_bounce.c tuibox.h tuibox_win.h
+	$(CC) $(DEBUGFLAGS) /Fe$@ demos\demo_bounce.c
+
+demos\debug_drag.exe: demos\demo_drag.c tuibox.h tuibox_win.h
+	$(CC) $(DEBUGFLAGS) /Fe$@ demos\demo_drag.c
+
+clean:
+	-del demos\*.exe 2>NUL
+	-del demos\*.obj 2>NUL
+	-del demos\*.pdb 2>NUL
+	-del demos\*.ilk 2>NUL
+	-del *.exe 2>NUL
+	-del *.obj 2>NUL
+	-del *.pdb 2>NUL
+	-del *.ilk 2>NUL
+
+help:
+	@echo Available targets:
+	@echo   all     - Build all demo programs (default)
+	@echo   debug   - Build with debug symbols
+	@echo   clean   - Remove all build artifacts
+	@echo   help    - Show this help message
+	@echo.
+	@echo Usage:
+	@echo   nmake /f Makefile.nmake [target]

@@ -3,7 +3,15 @@
  */
 
 #include <math.h>
+
+#ifdef _WIN32
+#include <windows.h>
 #include <signal.h>
+#define usleep(x) Sleep((x)/1000)
+#else
+#include <signal.h>
+#include <unistd.h>
+#endif
 
 #include "../tuibox.h"
 
@@ -11,7 +19,6 @@ ui_t u;
 
 void draw(ui_box_t *b, char *out){
   int x, y;
-  char tmp[256];
 
   sprintf(out, "\x1b[48;2;255;255;255m");
   for(y=0;y<b->h;y++){
@@ -22,7 +29,8 @@ void draw(ui_box_t *b, char *out){
   }
 }
 
-void stop(){
+void stop(int sig){
+  (void)sig; // Suppress unused parameter warning
   ui_free(&u);
   exit(0);
 }
@@ -50,13 +58,27 @@ int main(){
   );
   b = ui_get(id, &u);
 
+#ifndef _WIN32
   signal(SIGTERM, stop);
   signal(SIGQUIT, stop);
+#endif
   signal(SIGINT,  stop);
 
+  /* Register an event on the q key to exit */
+  ui_key("q", stop, &u);
+
+  /* Enable non-blocking input for animation loop */
+  ui_set_nonblocking(&u, 1);
+
   for(;;){
-    b->x = round((double)b->x + vx);
-    b->y = round((double)b->y + vy);
+    /* Check for input (non-blocking) */
+    char buf[64];
+    int n = read(STDIN_FILENO, buf, sizeof(buf));
+    if (n > 0) {
+      _ui_update(buf, n, &u);
+    }
+    b->x = (int)round((double)b->x + vx);
+    b->y = (int)round((double)b->y + vy);
 
     vx += ax;
     vy += ay;
@@ -81,5 +103,7 @@ int main(){
     usleep(10000);
   }
 
+  /* This should never be reached due to ui_key("q", stop, &u), but just in case */
+  ui_free(&u);
   return 0;
 }
